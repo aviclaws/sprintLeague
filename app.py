@@ -126,16 +126,22 @@ elif st.session_state.get("authentication_status"):
         else:
             st.warning("You need to start the stopwatch first.")
 
+    df = load_times()
+    today = datetime.now().date()
+    user_df = df[df["username"] == st.session_state.username]
+    user_df["saved_at"] = user_df["saved_at"].apply(lambda x: datetime.fromisoformat(x).date())
+    user_df = user_df[user_df['saved_at'] == today]
+    avg_time = user_df["time"].sum() / user_df.shape[0]
+    st.metric("Avg Time (s)", value=f"{avg_time:.2f}")
     st.divider()
     st.subheader(":trophy: Leader Board")
 
-    df = load_times()
+
     if df.empty:
         st.info("No times saved yet.")
     else:
         df["time"] = df["time"].round(2)
         df["saved_at"] = df["saved_at"].apply(lambda x: datetime.fromisoformat(x).date())
-        today = datetime.now().date()
         team_colors = ["Blue", "White"]
         color_cols = st.columns(2)
         for i, color_col in enumerate(color_cols):
