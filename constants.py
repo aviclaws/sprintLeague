@@ -1,6 +1,1 @@
-
-TEAM_LOGOS={
-    "White": "⚪",
-    "Blue": "🔵",
-    "Coach": ":loudspeaker:"
-}
+TEAM_LOGOS = {"White": "⚪", "Blue": "🔵", "Coach": ":loudspeaker:"}
