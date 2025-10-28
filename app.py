@@ -1,4 +1,6 @@
 import time
+
+import streamlit
 import yaml
 from yaml.loader import SafeLoader
 import streamlit_authenticator as st_auth
@@ -63,17 +65,17 @@ elif st.session_state.get("authentication_status"):
     is_admin = all_users[st.session_state.username]["admin"]
     if is_admin:
         with st.expander("Update Teams",expanded=False):
-            df = pd.DataFrame({
+            user_team_df = pd.DataFrame({
                 "username": list(all_users),
                 "team": [all_users[u]["team"] for u in all_users]
             })
 
             # Keep editable state
-            if "df" not in st.session_state:
-                st.session_state.df = df
+            if "user_team_df" not in st.session_state:
+                st.session_state.df = user_team_df
 
-            edited_df = st.data_editor(
-                df,
+            edited_user_team_df = st.data_editor(
+                user_team_df,
                 num_rows="fixed",
                 use_container_width=True,
                 column_config={
@@ -81,9 +83,9 @@ elif st.session_state.get("authentication_status"):
                     "team": st.column_config.SelectboxColumn(label="team", options=["White", "Blue", "Coach"], required=True),
                 }
             )
-            if st.button("Update Teams"):
-                usernames_to_update = edited_df["username"].tolist()
-                teams_to_update = edited_df["team"].tolist()
+            if st.button("Update Teams", key='update_teams'):
+                usernames_to_update = edited_user_team_df["username"].tolist()
+                teams_to_update = edited_user_team_df["team"].tolist()
                 for u, t in zip(usernames_to_update, teams_to_update):
                     st.session_state.config["credentials"]["usernames"][u]["team"] = t
                 with open("config.yaml", "w") as f:
@@ -108,14 +110,26 @@ elif st.session_state.get("authentication_status"):
             st.session_state.start_time = None
             st.session_state.time = 0.0
             st.session_state.running = False
+            st.session_state.btn_label = "▶️ Start"
+            st.rerun()
 
     if st.session_state.running:
         st.session_state.time = time.time() - st.session_state.start_time
 
-    st.metric("Time (s)", f"{st.session_state.time:.2f}")
+    curr_time_col, avg_time_col = st.columns(2)
+    with curr_time_col:
+        st.metric("Time (s)", f"{st.session_state.time:.2f}")
+    with avg_time_col:
+        df = load_times()
+        today = datetime.now().date()
+        user_df = df[df["username"] == st.session_state.username].copy()
+        user_df["saved_at"] = user_df["saved_at"].apply(lambda x: datetime.fromisoformat(x).date())
+        user_df = user_df[user_df['saved_at'] == today]
+        avg_time = user_df["time"].sum() / max(1, user_df.shape[0])
+        st.metric("Avg Time (s)", value=f"{avg_time:.2f}")
 
-    if st.button("💾 Save Time"):
-        if st.session_state.time > 0:
+    if st.button("💾 Save Time", key="save_time"):
+        if st.session_state.time > 0 and not st.session_state.running:
             save_time(
                 username=st.session_state.username,
                 team=st.session_state.config["credentials"]["usernames"][st.session_state.username]["team"],
@@ -123,16 +137,12 @@ elif st.session_state.get("authentication_status"):
             )
             st.success("Saved time successfully!")
             st.rerun()
-        else:
+        elif st.session_state.time == 0:
             st.warning("You need to start the stopwatch first.")
+        elif st.session_state.running:
+            st.toast("You need to stop the stopwatch first.")
 
-    df = load_times()
-    today = datetime.now().date()
-    user_df = df[df["username"] == st.session_state.username]
-    user_df["saved_at"] = user_df["saved_at"].apply(lambda x: datetime.fromisoformat(x).date())
-    user_df = user_df[user_df['saved_at'] == today]
-    avg_time = user_df["time"].sum() / user_df.shape[0]
-    st.metric("Avg Time (s)", value=f"{avg_time:.2f}")
+
     st.divider()
     st.subheader(":trophy: Leader Board")
 
@@ -143,14 +153,87 @@ elif st.session_state.get("authentication_status"):
         df["time"] = df["time"].round(2)
         df["saved_at"] = df["saved_at"].apply(lambda x: datetime.fromisoformat(x).date())
         team_colors = ["Blue", "White"]
+        edited_team_times_df = [None, None]
         color_cols = st.columns(2)
         for i, color_col in enumerate(color_cols):
             with color_col:
                 color_df = df.copy()
                 color_df = color_df[(color_df["team"] == team_colors[i]) & (color_df['saved_at'] == today)]
                 color_df = color_df.drop(['team', 'saved_at'], axis=1)
-                st.metric(label=f"{team_colors[i]}Team Time {TEAM_LOGOS[team_colors[i]]}", value=round(color_df["time"].sum(), 2))
-                st.dataframe(color_df, width="content", hide_index=True)
+                # Make sure the index isn't shown/kept as a column
+                color_df = color_df.reset_index(drop=True)  # removes the index
+                color_df.index.name = None  # extra safety
+
+                st.metric(label=f"{team_colors[i]} Team Time {TEAM_LOGOS[team_colors[i]]}",
+                          value=round(color_df["time"].sum(), 2))
+
+                if not is_admin:
+                    st.dataframe(color_df.drop(["id"], axis=1), column_order=["username","time","sprint_number"], width="content", hide_index=True)
+                else:
+                    edited_team_times_df[i] = st.data_editor(
+                        color_df,
+                        num_rows="dynamic",
+                        hide_index=True,
+                        width="content",
+                        column_order=["username", "time", "sprint_number", "id"],
+                        column_config={
+                            "id": st.column_config.NumberColumn(label="id", help="Row id (read-only)", disabled=True),
+                            "username": st.column_config.TextColumn(label="username", help="Unique user id", required=True),
+                            "sprint_number": st.column_config.NumberColumn(label="sprint_number", required=True, min_value=1, format="%d"),
+                            "time": st.column_config.NumberColumn(label="time", required=True, min_value=0.01, format="%.2f"),
+                        }
+                    )
+        if is_admin:
+            if st.button("Update Times", key="update_time"):
+                for i, team in enumerate(team_colors):
+                    edited = edited_team_times_df[i]
+                    if edited is None:
+                        continue  # non-admin view or no table rendered
+
+                    # Ensure proper dtypes and presence of 'id'
+                    edited = edited.copy()
+                    if 'id' not in edited.columns:
+                        edited['id'] = pd.NA
+
+                    # Coerce numeric fields safely
+                    if 'sprint_number' in edited:
+                        edited['sprint_number'] = edited['sprint_number'].astype('Int64')
+                    if 'time' in edited:
+                        edited['time'] = edited['time'].astype(float)
+
+                    # Load fresh snapshot of what's in DB for this team/today
+                    original = load_team_today(team)
+
+                    # --- Deletes ---
+                    edited_ids = set(edited['id'].dropna().astype(int).tolist())
+                    original_ids = set(original['id'].tolist())
+                    to_delete = list(original_ids - edited_ids)
+                    if to_delete:
+                        delete_time_by_ids(to_delete)
+
+                    # --- Inserts & Updates ---
+                    orig_by_id = {int(r.id): r for _, r in original.iterrows()}
+
+                    for _, row in edited.iterrows():
+                        row_id = row['id']
+                        if pd.isna(row_id):
+                            insert_time(str(row['username']).strip(),team,int(row['sprint_number']),float(row['time']),datetime.now(timezone.utc).isoformat())
+                        else:
+                            # UPDATE if any values changed
+                            rid = int(row_id)
+                            o = orig_by_id.get(rid)
+                            if o is None:
+                                insert_time(str(row['username']).strip(),team,int(row['sprint_number']),float(row['time']),datetime.now(timezone.utc).isoformat())
+                            else:
+                                if (
+                                        str(o['username']) != str(row['username']).strip()
+                                        or int(o['sprint_number']) != int(row['sprint_number'])
+                                        or float(o['time']) != float(row['time'])
+                                ):
+                                    update_time(rid,str(row['username']).strip(), int(row['sprint_number']),float(row['time']))
+
+                st.success("Times updated.")
+                st.rerun()
 
         if is_admin:
             csv = df.to_csv(index=False).encode("utf-8")
