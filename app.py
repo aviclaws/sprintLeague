@@ -59,7 +59,7 @@ elif st.session_state.get("authentication_status"):
 
     all_users = st.session_state.config["credentials"]["usernames"]
     st.title(
-        f"⏱️ Stopwatch — {st.session_state.get("name")} {TEAM_LOGOS[all_users[st.session_state.username].get("team")]}"
+        f"⏱️ Stopwatch — {st.session_state.get('name')} {TEAM_LOGOS[all_users[st.session_state.username].get('team')]}"
     )
     is_admin = all_users[st.session_state.username]["admin"]
     if is_admin:
