@@ -5,19 +5,25 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 
+# Increment this number any time you change schema.
+SCHEMA_VERSION = 2
+
 DB_PATH = Path(__file__).parent / "stopwatch.db"  # anchored to repo
 
 # --- DATABASE SETUP ---
+# --- CONNECTION ---
 @st.cache_resource
-def get_conn():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+def get_conn(cache_buster: int = 0):
+    # Use URI + mode=rw so we FAIL if the DB isn't present
+    # (prevents SQLite from silently creating a blank DB).
+    conn = sqlite3.connect(f"file:{DB_PATH}?mode=rw", uri=True, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL;")
     return conn
 
-
-def init_db():
-    conn = get_conn()
+def ensure_schema(conn):
+    """Add new columns/tables here; safe to run every startup."""
     with closing(conn.cursor()) as cur:
+        # Ensure base table exists
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS times (
@@ -29,10 +35,24 @@ def init_db():
                 saved_at_date TEXT NOT NULL,
                 saved_at_time TEXT NOT NULL
             )
-        """
+            """
         )
+
+        # Example migration: add a new column if it doesn't exist
+        cur.execute("PRAGMA table_info(times)")
+        existing_cols = {row[1] for row in cur.fetchall()}
+
+        # --- add your new columns here ---
+        # e.g. you added:  new_col TEXT
+        if "new_col" not in existing_cols:
+            cur.execute("ALTER TABLE times ADD COLUMN new_col TEXT")
+
         conn.commit()
 
+def init_db():
+    # bump SCHEMA_VERSION to force a fresh connection after schema changes
+    conn = get_conn(cache_buster=SCHEMA_VERSION)
+    ensure_schema(conn)
 
 def get_next_sprint_number(username: str) -> int:
     conn = get_conn()
