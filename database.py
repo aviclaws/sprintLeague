@@ -1,14 +1,16 @@
 import sqlite3
 from contextlib import closing
+from pathlib import Path
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 
+DB_PATH = Path(__file__).parent / "stopwatch.db"  # anchored to repo
 
 # --- DATABASE SETUP ---
 @st.cache_resource
 def get_conn():
-    conn = sqlite3.connect("stopwatch.db", check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL;")
     return conn
 
