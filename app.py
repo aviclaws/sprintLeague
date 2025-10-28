@@ -14,6 +14,7 @@ from pathlib import Path
 DB_PATH = Path(__file__).with_name("stopwatch.db")
 
 if DB_PATH.exists():
+    st.write()
     DB_PATH.unlink()  # delete the old file
 
 
