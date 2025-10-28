@@ -9,6 +9,7 @@ from constants import *
 
 st.set_page_config(page_title="Stopwatch with Login & DB", page_icon="⏱️", layout="centered")
 
+
 init_db()
 
 # --- SESSION STATE ---
